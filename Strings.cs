@@ -158,9 +158,9 @@
     // 高温自动保护开关
     public static string FanAutoProtect => T("高温自动保护", "高溫自動保護", "High-Temp Auto-Protect");
     public static string FanAutoProtectNote => T(
-        "💡开启后，若CPU温度过高且风扇处于固定转速且低于80%最大转速，OSH将自动切换为降温模式和自动风扇控制。",
-        "💡開啟後，若CPU溫度過高且風扇處於固定轉速且低於80%最大轉速，OSH將自動切換為降溫模式和自動風扇控制。",
-        "💡 When enabled, OSH automatically switches to Cool mode and Auto fan control if CPU temperature is too high and fans are running at a fixed low speed."
+        "💡开启后，若CPU温度过高且风扇设定的固定转速低于4000 RPM，OSH将自动切换为降温模式和自动风扇控制。",
+        "💡開啟後，若CPU溫度過高且風扇設定的固定轉速低於4000 RPM，OSH將自動切換為降溫模式和自動風扇控制。",
+        "💡 When enabled, OSH automatically switches to Cool mode and Auto fan control if CPU temperature is too high and the fixed fan speed is set below 4000 RPM."
     );
     public static string FanAutoProtectOn => T("开启保护", "開啟保護", "Enable Protection");
     public static string FanAutoProtectOff => T("关闭保护", "關閉保護", "Disable Protection");

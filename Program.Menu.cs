@@ -55,14 +55,7 @@ namespace OmenSuperHub {
       }
 
       BuildTrayMenu(trayIcon.ContextMenuStrip);
-      // 延迟安装低级鼠标钩子，避免 SetWindowsHookEx 在启动时造成鼠标卡顿
-      var hookDelayTimer = new System.Windows.Forms.Timer { Interval = 10 };
-      hookDelayTimer.Tick += (s, e) => {
-        hookDelayTimer.Stop();
-        hookDelayTimer.Dispose();
-        InstallTrayScrollHook();
-      };
-      hookDelayTimer.Start();
+      // 已停用：托盘图标滚轮切换预设（容易误触切到内置预设），不再安装全局鼠标钩子
 
       // Initialize tooltip update timer
       tooltipUpdateTimer = new System.Timers.Timer(1000); // Set interval to 1 second (low, default)

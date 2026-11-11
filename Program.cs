@@ -136,6 +136,8 @@ namespace OmenSuperHub {
     static readonly object fanWriteLock = new object();
     // 每次切换预设自增，用于让过期的补发任务自动作废
     static int presetSwitchSeq = 0;
+    // 高温自动保护：仅当设定的固定转速低于该值时才接管为自动
+    const int AutoProtectRpmThreshold = 4000;
     static System.Timers.Timer tooltipUpdateTimer; // Timer for updating tooltip
     static System.Windows.Forms.Timer checkFloatingTimer, optimiseTimer;
     static NotifyIcon trayIcon;
@@ -1204,16 +1206,15 @@ namespace OmenSuperHub {
         GPUTemp = (tempDisplayMode == "raw") ? rawTempGPU : smoothedGPUTemp;
 
       int currentMaxCPUTemp = maxCPUTemp ?? 97;
-      if (autoFanProtect == "on" && platformMaxFanSpeed.HasValue && (monitorCPU || monitorGPU) && smoothedCPUTemp > currentMaxCPUTemp - 2 && fanControl.Contains(" RPM")) {
-        // 检查是否满足转速低于平台最大转速80%的条件
-        bool fanSpeedCondition = true;
-        if (platformMaxFanSpeed.Value > 0) {
-          int currentFanSpeed;
-          lock (fanSpeedNow) { currentFanSpeed = (fanSpeedNow[0] + fanSpeedNow[1]) * 50; }
-          fanSpeedCondition = currentFanSpeed < platformMaxFanSpeed.Value * 0.8;
-        }
+      if (autoFanProtect == "on" && (monitorCPU || monitorGPU) && smoothedCPUTemp > currentMaxCPUTemp - 2 && fanControl.Contains(" RPM")) {
+        // 只看用户设定的固定转速，不看实测转速：设定值低于门槛才接管，
+        // 避免风扇被瞬时冲低时误触发并把预设改写为自动
+        bool fanSpeedCondition = int.TryParse(fanControl.Replace(" RPM", "").Trim(), out int setRpm) && setRpm < AutoProtectRpmThreshold;
 
         if (fanSpeedCondition) {
+          int s0, s1;
+          lock (fanSpeedNow) { s0 = fanSpeedNow[0]; s1 = fanSpeedNow[1]; }
+          Logger.Info($"[高温保护] 触发：CPU {smoothedCPUTemp:F1}℃（阈值 {currentMaxCPUTemp - 2}℃），设定 {setRpm} RPM < {AutoProtectRpmThreshold}，实测 {s0 * 100}/{s1 * 100} RPM，预设 {currentPreset} 改为自动");
           // 先切换为降温模式（cool配置）
           fanTable = "cool";
           LoadFanConfig("cool.txt");
