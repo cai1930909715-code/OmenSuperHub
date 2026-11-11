@@ -1083,14 +1083,18 @@ namespace OmenSuperHub {
         fanControlTimer.Change(0, 1000);
         UpdateCheckedState("fanControlGroup", Strings.FanAuto);
       } else if (fanControl.Contains("max")) {
-        SetMaxFanSpeedOn();
-        fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+        lock (fanWriteLock) {
+          SetMaxFanSpeedOn();
+          fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+        }
         UpdateCheckedState("fanControlGroup", Strings.FanMax);
       } else if (fanControl.Contains(" RPM")) {
-        SetMaxFanSpeedOff();
-        fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
         int rpmValue = int.Parse(fanControl.Replace(" RPM", "").Trim());
-        SetFanLevel(rpmValue / 100, rpmValue / 100, Is3FanNb);
+        lock (fanWriteLock) {
+          SetMaxFanSpeedOff();
+          fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+          SetFanLevel(rpmValue / 100, rpmValue / 100, Is3FanNb);
+        }
         if (fanTrackBar != null) fanTrackBar.Value = rpmValue / 100;
         UpdateCheckedState("fanControlGroup", Strings.SetFanSpeedSlider);
       }
@@ -1269,6 +1273,46 @@ namespace OmenSuperHub {
       ApplyPresetSettings(targetPreset);                                 // 应用到硬件 + 刷新其余菜单
       UpdateTrayIconText();
       UpdateFloatingText();
+
+      // 切换后补发手动风扇设置：后续的功耗/TPP 等 BIOS 指令可能让风扇回到默认转速，
+      // 与启动时 optimiseSchedule 的重发逻辑一致，排在 1s 延迟的 TPP 之后再发两次
+      int seq = Interlocked.Increment(ref presetSwitchSeq);
+      string fanSnapshot = fanControl;
+      Logger.Info($"[预设] 切换到 {targetPreset}，风扇设置：{fanSnapshot}");
+      if (fanSnapshot != "auto") {
+        foreach (int delayMs in new[] { 2000, 5000 }) {
+          int d = delayMs;
+          System.Threading.Tasks.Task.Delay(d).ContinueWith(_ => ReapplyManualFan(seq, targetPreset, fanSnapshot, d));
+        }
+      }
+    }
+
+    /// <summary>
+    /// 切换预设后延时补发手动风扇设置。若期间又切换了预设或风扇设置被改动，则跳过。
+    /// </summary>
+    static void ReapplyManualFan(int seq, string preset, string fanSnapshot, int delayMs) {
+      try {
+        lock (fanWriteLock) {
+          if (seq != Volatile.Read(ref presetSwitchSeq) || currentPreset != preset || fanControl != fanSnapshot) {
+            Logger.Info($"[预设] {delayMs / 1000}s 补发已跳过（预设或风扇设置已变化，当前：{currentPreset} / {fanControl}）");
+            return;
+          }
+          if (fanSnapshot.Contains("max")) {
+            SetMaxFanSpeedOn();
+          } else if (fanSnapshot.Contains(" RPM")) {
+            int rpmValue = int.Parse(fanSnapshot.Replace(" RPM", "").Trim());
+            SetMaxFanSpeedOff();
+            SetFanLevel(rpmValue / 100, rpmValue / 100, Is3FanNb);
+          } else {
+            return;
+          }
+          int s0, s1;
+          lock (fanSpeedNow) { s0 = fanSpeedNow[0]; s1 = fanSpeedNow[1]; }
+          Logger.Info($"[预设] 切换后 {delayMs / 1000}s 补发风扇设置：{fanSnapshot}（补发前读数 {s0 * 100}/{s1 * 100} RPM）");
+        }
+      } catch (Exception ex) {
+        Logger.Error($"ReapplyManualFan: {ex.Message}");
+      }
     }
 
     /// <summary>

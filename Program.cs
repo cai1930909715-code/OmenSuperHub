@@ -132,6 +132,10 @@ namespace OmenSuperHub {
     static SortedDictionary<float, int> CPUTempFanMap = new SortedDictionary<float, int>();
     static SortedDictionary<float, int> GPUTempFanMap = new SortedDictionary<float, int>();
     static System.Threading.Timer fanControlTimer;
+    // 所有"向风扇写转速"的操作共用这把锁，避免自动风扇线程与切换预设互相覆盖
+    static readonly object fanWriteLock = new object();
+    // 每次切换预设自增，用于让过期的补发任务自动作废
+    static int presetSwitchSeq = 0;
     static System.Timers.Timer tooltipUpdateTimer; // Timer for updating tooltip
     static System.Windows.Forms.Timer checkFloatingTimer, optimiseTimer;
     static NotifyIcon trayIcon;
@@ -298,12 +302,19 @@ namespace OmenSuperHub {
           if (fanControl != "auto") return;
           int fanSpeed = GetFanSpeedForTemperature() / 100;
           if (fanSpeed < 0) return;
-          int s0, s1;
-          lock (fanSpeedNow) { s0 = fanSpeedNow[0]; s1 = fanSpeedNow[1]; }
-          if (Math.Abs(fanSpeed - s0) > 1 || Math.Abs(fanSpeed - s1) > 1) {
-            SetFanLevel(fanSpeed, fanSpeed, Is3FanNb);
-            if (!monitorFan) {
-              lock (fanSpeedNow) { fanSpeedNow[0] = fanSpeed; fanSpeedNow[1] = fanSpeed; }
+          lock (fanWriteLock) {
+            // 计算转速期间可能已切到手动/最大转速（例如切换预设），写入前再确认一次
+            if (fanControl != "auto") {
+              Logger.Info($"[风扇] 自动线程写入前发现模式已变为 {fanControl}，放弃写入 {fanSpeed * 100} RPM");
+              return;
+            }
+            int s0, s1;
+            lock (fanSpeedNow) { s0 = fanSpeedNow[0]; s1 = fanSpeedNow[1]; }
+            if (Math.Abs(fanSpeed - s0) > 1 || Math.Abs(fanSpeed - s1) > 1) {
+              SetFanLevel(fanSpeed, fanSpeed, Is3FanNb);
+              if (!monitorFan) {
+                lock (fanSpeedNow) { fanSpeedNow[0] = fanSpeed; fanSpeedNow[1] = fanSpeed; }
+              }
             }
           }
         }, null, 100, 1000);
